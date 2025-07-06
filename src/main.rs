@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 struct Config {
     help: bool,
     inplace: bool,
+    color: Option<String>,
     no_coretemp: bool,
     no_nvme: bool,
     rc_file: Option<String>,
@@ -23,10 +24,11 @@ Arguments:
   RC            : conky rc file.
 
 Options:
-  -h, --help    : print help document.
-  -i, --inplace : inpalce RC file.
-  --no-coretemp : do not update coretemp path.
-  --no-nvme     : do not update nvme (disk) path.
+  -h, --help        : print help document.
+  -i, --inplace     : inpalce RC file.
+  -c, --color COLOR : change primary color.
+  --no-coretemp     : do not update coretemp path.
+  --no-nvme         : do not update nvme (disk) path.
 ");
     }
 
@@ -34,6 +36,7 @@ Options:
         let mut i = 1;
         let mut help = false;
         let mut inplace = false;
+        let mut color = None;
         let mut no_coretemp = false;
         let mut no_nvme = false;
         let mut rc_file = None;
@@ -44,6 +47,10 @@ Options:
                 "-h" | "--help" => {
                     help = true;
                     i += 1;
+                }
+                "-c" | "--color" => {
+                    color = Some(String::from(args[i + 1].as_str()));
+                    i += 2;
                 }
                 "-i" | "--inplace" => {
                     inplace = true;
@@ -71,7 +78,7 @@ Options:
             };
         }
 
-        Config { help, inplace, no_coretemp, no_nvme, rc_file }
+        Config { help, inplace, color, no_coretemp, no_nvme, rc_file }
     }
 
     fn with_default_rc_file(&mut self) {
@@ -153,16 +160,35 @@ fn update_conkyrc_content<W: Write>(config: &Config, input: &String, output: &mu
     let rc_file = File::open(input)?;
     let reader = BufReader::new(rc_file);
 
+    let mut in_config_section = false;
+
     for line_read in reader.lines() {
         let line = line_read?;
         if let Some(0) = line.find("--") {
             writeln!(output, "{line}")?;
-        } else if let None = line.find("hwmon") {
+        } else if line.starts_with("conky.config") {
             writeln!(output, "{line}")?;
-        } else if let Some(0) = line.find("== CPU ==") && !config.no_coretemp {
+            in_config_section = true;
+        } else if in_config_section && line.starts_with("}") {
+            writeln!(output, "{line}")?;
+            in_config_section = false;
+        } else if in_config_section && let Some(eqi) = line.find("=") && config.color.is_some() {
+            match line[..eqi].trim() {
+                "color0" | "default_color" | "default_outline_color" | "default_shade_color" => {
+                    let ref color = config.color.as_ref().unwrap();
+                    let ret = format!("{0} = \"{1}\"", &line[..eqi], color) ;
+                    writeln!(output, "{ret}")?;
+                }
+                _ => {
+                    writeln!(output, "{line}")?;
+                }
+            }
+        } else if line.find("hwmon").is_none() {
+            writeln!(output, "{line}")?;
+        } else if line.starts_with("== CPU ==") && !config.no_coretemp {
             let updated = replace_hwmon_path(String::from(&line), find_hwmon_path("coretemp"));
             writeln!(output, "{updated}")?;
-        } else if let Some(0) = line.find("== Disk IO ==") && !config.no_nvme {
+        } else if line.starts_with("== Disk IO ==") && !config.no_nvme {
             let updated = replace_hwmon_path(String::from(&line), find_hwmon_path("nvme"));
             writeln!(output, "{updated}")?;
         } else {
