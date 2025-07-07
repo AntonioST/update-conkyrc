@@ -1,0 +1,259 @@
+-- vim: ts=4 sw=4 noet ai cindent syntax=lua
+--[[
+Conky, a system monitor, based on torsmo
+
+Any original torsmo code is licensed under the BSD license
+
+All code written since the fork of torsmo is licensed under the GPL
+
+Please see COPYING for details
+
+Copyright (c) 2004, Hannu Saransaari and Lauri Hakkarainen
+Copyright (c) 2005-2012 Brenden Matthews, Philip Kovacs, et. al. (see AUTHORS)
+All rights reserved.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+]]
+
+-- global property --
+
+bar_h = 8
+graph_h = 16
+graph_w = 500
+middle = 250
+
+conky.config = {
+	-- stdout
+	out_to_console = false,
+	out_to_stderr = false,
+	extra_newline = false,
+
+	-- window
+	own_window = true,
+	own_window_class = 'Conky',
+	own_window_type = 'desktop',
+	own_window_transparent = true,
+	own_window_argb_visual = true,
+	own_window_hints = 'undecorated,sticky,skip_taskbar,skip_pager,below',
+	background = true,
+	double_buffer = true,
+
+	-- window style
+	alignment = 'top_right',
+	gap_x = 15,
+	gap_y = 40,
+	border_width = 1,
+	minimum_height = 5,
+	minimum_width = 5,
+
+	-- style
+	color0 = 'black',
+	color1 = 'yellow',
+	color2 = 'red',
+	-- default_color = 'white',
+	default_color = 'black',
+	default_outline_color = 'black',
+	default_shade_color = 'black',
+	default_graph_height = graph_h,
+	default_graph_width = middle,
+	draw_borders = false,
+	draw_graph_borders = false,
+	draw_outline = false,
+	draw_shades = false,
+	use_xft = true,
+	xftalpha = 0.8,
+	font = 'FreeMono:size=12',
+	uppercase = false,
+	stippled_borders = 0,
+	use_spacer = 'right',
+	show_graph_scale = false,
+	show_graph_range = false,
+
+	-- data
+	cpu_avg_samples = 2,
+	net_avg_samples = 2,
+	update_interval = 2.0,
+	no_buffers = true,
+
+	xinerama_head = 1,
+
+	-- scripts
+	lua_load = ".conkyrc.d/util.lua"
+}
+
+
+text = ""
+
+-- system information --
+
+text = text .. string.format("$nodename$alignr$sysname $kernel\n")
+
+
+-- working information --
+
+text = text .. string.format("Uptime: $uptime  ${alignr}Load: ${loadavg}\n")
+
+-- cpu --
+
+-- cat /sys/class/hwmon/hwmon8/name
+-- coretemp
+-- cat /sys/class/hwmon/hwmon8/temp1_label
+-- Package id 0
+
+text = text .. string.format([[\
+== CPU == Temp: ${eval $${lua_bar %d,250 conky_norm ${hwmon 8 temp 1} 110}} $alignr ${hwmon 8 temp 1}'C
+]], bar_h)
+
+-- cpu usage --
+
+function cpu_status(n)
+return string.format("${cpubar cpu%d %d,230}", n, bar_h, n)
+end
+
+cpu_count = 20
+for cpu = 1,cpu_count,2 do
+text = text .. string.format("%s${goto 250}%s\n", cpu_status(cpu), cpu_status(cpu + 1))
+end
+
+-- cpu use graph --
+
+text = text .. string.format([[\
+${cpugraph %d,%d}
+]], graph_h, graph_w)
+
+
+-- gpu --
+
+text = text .. string.format([[\
+== GPU == Temp: ${eval $${lua_bar %d,250 conky_echo ${nvidia temp}}} $alignr ${nvidia temp}'C
+]], bar_h)
+
+-- memory --
+
+mem_color = [[\
+${if_match $memperc > 90}${color2}$else\
+${if_match $memperc > 80}${color1}$else\
+${color0}$endif$endif]]
+
+swap_color = [[\
+${if_match $swapperc > 75}${color2}$else\
+${if_match $swapperc > 50}${color1}$else\
+${color0}$endif$endif]]
+
+text = text .. string.format([[\
+== Memory ==
+RAM: %s${membar %d,250}$alignr$mem/$memmax $memperc%%${color0}
+SWP: %s${swapbar %d,250}$alignr$swap/$swapmax $swapperc%%${color0}
+${memgraph %d,%d}
+]],
+	mem_color, bar_h, --
+	swap_color, bar_h, --
+	graph_h, graph_w
+)
+--$alignr U:$mem C:$cached B:$buffers M:$memmax
+--$alignr U:$swap M:$swapmax
+
+-- battery --
+
+battery_color = [[\
+${if_match $battery_percent >= 50}${color0}$else\
+${if_match $battery_percent >= 25}${color1}$else\
+${color2}$endif$endif]]
+text = text .. string.format("== Battery == %s${battery_bar %d,300}$alignr$battery_percent%%${color0}\n", battery_color, bar_h)
+
+-- disk IO --
+
+-- [[cat /sys/class/hwmon/hwmon*/name]]
+text = text .. string.format([[\
+== Disk IO == $alignr${hwmon 2 temp 1}'C
+Read: ${diskio_read}/s ${goto 250}Write: ${diskio_write}/s
+${diskiograph_read %d,230}${goto 250}${diskiograph_write %d,230}
+]], graph_h, graph_h)
+
+
+-- network --
+
+function network_usage_if(neti, name)
+text = text .. string.format([[\
+${if_existing /proc/net/route %s}== %s Network == $alignr(%s)
+Down: ${downspeed %s}/s${goto 250}Up: ${upspeed %s}/s
+${downspeedgraph %s %d,230}${goto 250}${upspeedgraph %s %d,230}
+$endif]],
+		neti, name, neti, --
+		neti, neti, --
+		neti, graph_h, neti, graph_h --
+	)
+end
+
+network_usage_if("enp0s20f0u1u4c2", "Wired")
+network_usage_if("wlp3s0f0", "Wifi")
+
+-- disk volume --
+
+text = text .. string.format("== Disk Usage ==\n")
+
+function disk_status(n, p)
+volumn_color = string.format([[\
+${if_match ${fs_used_perc %s} >= 95}${color2}$else\
+${if_match ${fs_used_perc %s} >= 90}${color1}$else\
+${color0}$endif$endif]], p, p)
+text = text .. string.format("%s${goto 150}%s${fs_bar %d,150 %s}$alignr${fs_used %s}/${fs_size %s} ${fs_used_perc s}%%${color0}\n",
+		n, volumn_color, bar_h, p, p, p, p)
+end
+
+disk_status('/',		'/')
+disk_status('/home',	'/home')
+
+-- mount disk volume --
+
+function mount_status_if(n, p)
+text = text .. string.format("${if_mounted %s}", p)
+disk_status(n, p)
+text = text .. string.format("$endif")
+end
+
+-- mount_status_if('/m/EXT',			'/media/EXT')
+
+-- process --
+
+text = text .. string.format([[
+
+== Process == ${alignr}Total: $processes, Run: $running_processes
+-- CPU Usage -- ${alignr}Mem_Res   CUP%%
+]])
+
+function cpu_usage(count)
+	for i = 1, count do
+text = text .. string.format([[
+${top pid %d} ${top name %d}$alignr${top mem_res %d} ${top cpu %d}
+]], i, i, i, i)
+	end
+end
+
+cpu_usage(10)
+
+-- memory usage --
+
+text = text .. string.format("-- Memory Usage -- ${alignr}Mem_Res   Mem%%\n")
+
+function mem_usage(count)
+	for i = 1, count do
+text = text .. string.format([[
+${top_mem pid %d} ${top_mem name %d}$alignr${top_mem mem_res %d} ${top_mem mem %d}${color0}
+]], i, i, i, i)
+	end
+end
+
+mem_usage(10)
+
+conky.text = text
