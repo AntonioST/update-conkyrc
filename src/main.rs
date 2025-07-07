@@ -49,8 +49,12 @@ Options:
                     i += 1;
                 }
                 "-c" | "--color" => {
-                    color = Some(String::from(args[i + 1].as_str()));
-                    i += 2;
+                    if let Some(c) = args.get(i + 1) && !c.starts_with("-") {
+                        color = Some(c.clone());
+                        i += 2;
+                    } else {
+                        panic!("--color missing value");
+                    }
                 }
                 "-i" | "--inplace" => {
                     inplace = true;
