@@ -104,7 +104,7 @@ fn find_hwmon_path(name: &'static str) -> Option<i32> {
             return None;
         } else {
             if let Ok(read) = fs::read_to_string(path) {
-                if read == name {
+                if read.trim() == name {
                     return Some(i);
                 }
             }

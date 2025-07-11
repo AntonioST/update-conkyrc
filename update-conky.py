@@ -27,7 +27,7 @@ CONTENT = RC.read_text()
 def find_hwmon_path(cate: str) -> str | None:
     i = 0
     while (p := Path(f'/sys/class/hwmon/hwmon{i}/name')).exists():
-        name = p.read_text()
+        name = p.read_text().strip()
         if name == cate:
             return str(i)
         i += 1
@@ -71,6 +71,6 @@ CONTENT = '\n'.join(OUTPUT)
 
 if OPT.inplace:
     with RC.open('w') as out:
-        print(CONTENT, file=out)
+        print(CONTENT, end='', file=out)
 else:
     print(CONTENT)
